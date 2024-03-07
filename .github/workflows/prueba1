@@ -1,0 +1,49 @@
+name: Merge a develop al finalizar una rama
+
+on:
+  push:
+    branches:
+      - 'feature/*'
+
+jobs:
+  merge-a-develop:
+    name: Merge a develop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v2
+
+      - name: Verificar mensaje del commit
+        id: check_commit_message
+        run: |
+          commit_msg=$(git log -1 --pretty=%B)
+          if [[ "$commit_msg" == *"Rama_Finalizada"* ]]; then
+            echo "::set-output name=merge::true"
+          else
+            echo "::set-output name=merge::false"
+          fi
+
+      - name: Ejecutar pruebas si el mensaje del commit es válido
+        if: steps.check_commit_message.outputs.merge == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m unittest tests/test_album.py
+        continue-on-error: true
+        id: test_result
+
+      - name: Verificar resultado de las pruebas
+        if: steps.check_commit_message.outputs.merge == 'true' && ${{ failure() }}
+        run: |
+          echo "Las pruebas fallaron. No se realizará el merge."
+          exit 1
+
+      - name: Fusionar cambios a develop
+        if: steps.check_commit_message.outputs.merge == 'true' && steps.test_result.outcome == 'success'
+        uses: tukasz/direct-merge-action@master
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          source-branch: ${{ github.ref }}
+          target-branch: develop
+          commit-message: "Merge commit to develop"
