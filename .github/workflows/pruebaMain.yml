@@ -1,4 +1,4 @@
-name: Merge a develop con validación de pruebas
+name: CI
 
 on:
   push:
@@ -6,50 +6,46 @@ on:
       - develop
 
 jobs:
-  merge-a-develop:
-    name: Merge a develop
+  test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del repositorio
-        uses: actions/checkout@v2
+    - name: Checkout develop branch
+      uses: actions/checkout@v2
+      with:
+        ref: develop
 
-      - name: Crear rama feature
-        run: git checkout -b feature/Merge_a_develop_con_validacion_de_pruebas
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
 
-      - name: Fusionar cambios a develop
-        run: git merge develop
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Instalar herramientas de GitHub
-        run: |
-          sudo apt-get install -y hub
+    - name: Run tests
+      run: |
+        python -m unittest tests/test_album.py
 
-      - name: Configuración de entorno de python
-        uses: actions/setup-python@v2
-        with:
-            python-version: '3.7'
+    - name: Create Pull Request
+      if: success()  # Only if previous steps were successful
+      uses: peter-evans/create-pull-request@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: Merge develop into main
+        branch: merge-develop-into-main
+        base: main
 
-      - name: Instalación de librerías y dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Install GitHub CLI
+      run: |
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+        sudo apt-add-repository https://cli.github.com/packages
+        sudo apt update
+        sudo apt install gh
 
-      # Ejecutar pruebas
-      - name: Ejecutar pruebas
-        run: |
-          python -m unittest tests/test_album.py
-        continue-on-error: true
-        id: test_result
-
-      - name: Verificar resultado de las pruebas
-        if: ${{ failure() }}
-        run: |
-          echo "Las pruebas fallaron. No se realizará el merge."
-          exit 1
-
-      # Fusionar cambios a la rama main si las pruebas fueron exitosas
-      - name: Fusionar cambios a main
-        if: steps.test_result.outcome == 'success'
-        run: |
-          git push origin feature/Merge_a_develop_con_validacion_de_pruebas
-          hub pull-request -b main -m "Merge a main con validación de pruebas exitosas" -h feature/Merge_a_develop_con_validacion_de_pruebas
+    - name: Merge Pull Request
+      run: |
+        echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
+        gh pr merge --auto --merge merge-develop-into-main
