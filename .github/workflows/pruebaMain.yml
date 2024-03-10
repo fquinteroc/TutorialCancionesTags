@@ -1,51 +1,78 @@
-name: CI
-
+name: Creación del release una vez se ejecutan las pruebas unitarias
 on:
-  push:
-    branches:
-      - develop
-
+  pull_request:
+    types:
+      - closed
+    branches: [ develop ]
 jobs:
-  test:
+  # Ejecutar pruebas
+  unitarias:  
+    name: Ejecutar pruebas unitarias
     runs-on: ubuntu-latest
-
+    
     steps:
-    - name: Checkout develop branch
-      uses: actions/checkout@v2
-      with:
-        ref: develop
+      - name: Checkout del repositorio
+        uses: actions/checkout@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.8
+      - name: Configuración de entorno de python
+        uses: actions/setup-python@v2
+        with:
+            python-version: '3.7'
+      - name: Instalación de librerías y dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt        
+      
+      - name: Ejecutar pruebas unitarias
+        id: test_result
+        run: |
+          python -m unittest tests/test_album.py
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        
+      - name: Validar resultado pruebas unitarias fallidas
+        if: ${{ failure() }}
+        env:
+          msg_error_unitarias: Una o varias pruebas fallaron
+        run: echo "::set-output name=respuesta::${msg_error_unitarias}"
 
-    - name: Run tests
-      run: |
-        python -m unittest tests/test_album.py
+      - name: Validar resultado pruebas unitarias satisfactorias
+        if: ${{ success() }}
+        env:
+          msg_success_unitarias: Todas las pruebas fueron exitosas
+        run: echo "::set-output name=respuesta::${msg_success_unitarias}"    
 
-    - name: Create Pull Request
-      if: success()  # Only if previous steps were successful
-      uses: peter-evans/create-pull-request@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: Merge develop into main
-        branch: merge-develop-into-main
-        base: main
+  generar-release:
+    
+    name: Generar release
+    needs: unitarias
+    runs-on: ubuntu-latest
+    steps:
 
-    - name: Install GitHub CLI
-      run: |
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-        sudo apt-add-repository https://cli.github.com/packages
-        sudo apt update
-        sudo apt install gh
+      - name: Generar nombre tag
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d-%H-%M-%S')"
 
-    - name: Merge Pull Request
-      run: |
-        echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
-        gh pr merge --auto --merge merge-develop-into-main
+      - name: Crear Release
+        if: steps.test_result.outcome == 'success'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.date.outputs.date }}
+          release_name: Release ${{ steps.date.outputs.date }}
+          draft: false
+          prerelease: false
+
+  fusionar-cambios-master:
+    name: Fusionar release a master
+    needs: generar-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: merge master
+        if: steps.test_result.outcome == 'success'
+        uses: tukasz/direct-merge-action@master
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          source-branch: develop
+          target-branch: master
+          commit-message: "Merge to release into master"    
