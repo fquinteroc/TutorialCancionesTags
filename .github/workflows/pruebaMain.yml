@@ -17,6 +17,13 @@ jobs:
       - name: Crear rama feature
         run: git checkout -b feature/Merge_a_develop_con_validacion_de_pruebas
 
+      - name: Fusionar cambios a develop
+        run: git merge develop
+
+      - name: Instalar herramientas de GitHub
+        run: |
+          sudo apt-get install -y hub
+
       - name: Configuración de entorno de python
         uses: actions/setup-python@v2
         with:
